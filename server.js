@@ -10,10 +10,14 @@ var Strategy = require('passport-facebook').Strategy;
 // behalf, along with the user's profile.  The function must invoke `cb`
 // with a user object, which will be set at `req.user` in route handlers after
 // authentication.
+//
+// var url = 'http://localhost:3000';
+var url = 'https://passporttest.herokuapp.com';
+
 passport.use(new Strategy({
     clientID: '1811274792505588' || process.env.CLIENT_ID,
     clientSecret: 'e1123400706660524a99ec39cd297774' || process.env.CLIENT_SECRET,
-    callbackURL: 'http://localhost:3000/login/facebook/return'
+    callbackURL: url + '/login/facebook/return'
   },
   function(accessToken, refreshToken, profile, cb) {
     // In this example, the user's Facebook profile is supplied as the user
