@@ -1,97 +1,81 @@
 var express = require('express');
 var passport = require('passport');
+const mongoose = require('mongoose');
+const session = require('express-session');
+const MongoStore = require('connect-mongo')(session);
 var Strategy = require('passport-facebook').Strategy;
+var db = require('./database');
+var User = db.User;
 
-
-// Configure the Facebook strategy for use by Passport.
-//
-// OAuth 2.0-based strategies require a `verify` function which receives the
-// credential (`accessToken`) for accessing the Facebook API on the user's
-// behalf, along with the user's profile.  The function must invoke `cb`
-// with a user object, which will be set at `req.user` in route handlers after
-// authentication.
-//
-// var url = 'http://localhost:3000';
-var url = 'https://passporttest.herokuapp.com';
+var url = 'http://localhost:3000';
+// var url = 'https://passporttest.herokuapp.com' || process.env.URL;
 
 passport.use(new Strategy({
-    clientID: '1811274792505588' || process.env.CLIENT_ID,
-    clientSecret: 'e1123400706660524a99ec39cd297774' || process.env.CLIENT_SECRET,
-    callbackURL: url + '/login/facebook/return'
+    clientID: 'FACEBOOK_CLIENT_ID' || process.env.CLIENT_ID,
+    clientSecret: 'FACEBOOK_CLIENT_SECRET' || process.env.CLIENT_SECRET,
+    callbackURL: url + '/login/facebook/return',
+    passReqToCallback: true
   },
-  function(accessToken, refreshToken, profile, cb) {
-    // In this example, the user's Facebook profile is supplied as the user
-    // record.  In a production-quality application, the Facebook profile should
-    // be associated with a user record in the application's database, which
-    // allows for account linking and authentication with other identity
-    // providers.
-    return cb(null, profile);
-  }));
+    function(req, accessToken, refreshToken, profile, done) {
+      db.updateOrCreateUser({ fbId : profile.id, displayName: profile.displayName,  sessionID: req.sessionID }, function (err, user) {
+        return done(err, user);
+      });
+    }
+  ));
 
-
-// Configure Passport authenticated session persistence.
-//
-// In order to restore authentication state across HTTP requests, Passport needs
-// to serialize users into and deserialize users out of the session.  In a
-// production-quality application, this would typically be as simple as
-// supplying the user ID when serializing, and querying the user record by ID
-// from the database when deserializing.  However, due to the fact that this
-// example does not have a database, the complete Facebook profile is serialized
-// and deserialized.
-passport.serializeUser(function(user, cb) {
-  cb(null, user);
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
 });
 
-passport.deserializeUser(function(obj, cb) {
-  cb(null, obj);
+passport.deserializeUser(function(id, done) {
+  User.findById(id,function(err,user){
+    done(err, user);
+  });
 });
 
 
-// Create a new Express application.
 var app = express();
+app.use(express.static(__dirname + '/client/dist'));
 
-// Configure view engine to render EJS templates.
-app.set('views', __dirname + '/views');
-app.set('view engine', 'ejs');
 
-// Use application-level middleware for common functionality, including
-// logging, parsing, and session handling.
-app.use(require('morgan')('combined'));
 app.use(require('cookie-parser')());
 app.use(require('body-parser').urlencoded({ extended: true }));
-app.use(require('express-session')({ secret: 'keyboard cat', resave: true, saveUninitialized: true }));
 
-// Initialize Passport and restore authentication state, if any, from the
-// session.
+app.use(session({
+  secret: 'my little secret',
+  resave: false,
+  saveUninitialized: true,
+  store: new MongoStore({mongooseConnection: mongoose.connection})
+}));
+
+
 app.use(passport.initialize());
 app.use(passport.session());
-
-
-// Define routes.
-app.get('/',
-  function(req, res) {
-    res.render('home', { user: req.user });
-  });
-
-app.get('/login',
-  function(req, res){
-    res.render('login');
-  });
 
 app.get('/login/facebook',
   passport.authenticate('facebook'));
 
 app.get('/login/facebook/return',
-  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  passport.authenticate('facebook', { failureRedirect: '/' }),
   function(req, res) {
     res.redirect('/');
   });
 
-app.get('/profile',
-  require('connect-ensure-login').ensureLoggedIn(),
-  function(req, res){
-    res.render('profile', { user: req.user });
+app.get('/checkSession', (req, res) => {
+  User.findOne({ sessionID: req.sessionID }, (err, user) => {
+    if (user) {
+      res.send(true);
+    } else {
+      res.send(false);
+    }
   });
+});
+
+app.get('/logOut', (req, res) => {
+  db.logout(req.sessionID, function() {
+    res.send(false);
+  });
+});
 
 var port = process.env.PORT || 3000;
 app.listen(port);
